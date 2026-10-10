@@ -1,0 +1,8 @@
+# Runtime dependencies
+fastapi>=0.115
+uvicorn[standard]>=0.30
+line-bot-sdk>=3.5,<4
+sqlmodel>=0.0.22
+sqlalchemy-libsql>=0.1.0
+pydantic-settings>=2.4
+python-dotenv>=1.0
