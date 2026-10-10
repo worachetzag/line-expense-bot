@@ -165,6 +165,28 @@ def render_confirmation(tx: Transaction) -> str:
     return "\n".join(lines)
 
 
+def render_multi_confirmation(txs: Sequence[Transaction]) -> str:
+    lines = [f"✅ บันทึกแล้ว {len(txs)} รายการ", "─────────────"]
+    income = 0.0
+    expense = 0.0
+    for tx in txs:
+        icon = "💚" if tx.type == "income" else "❤️"
+        sign = "+" if tx.type == "income" else "-"
+        line = f"{icon} {sign}{format_money(tx.amount)}  {tx.category}"
+        if tx.note:
+            line += f"  ({tx.note})"
+        lines.append(line)
+        if tx.type == "income":
+            income += tx.amount
+        else:
+            expense += tx.amount
+    lines.append("─────────────")
+    lines.append(f"รวม รับ +{format_money(income)} / จ่าย -{format_money(expense)}")
+    lines.append("")
+    lines.append("ถ้าหมวดไม่ถูก กดปุ่มหรือพิมพ์: แก้ <ชื่อหมวด>")
+    return "\n".join(lines)
+
+
 def _summarize(txs: Sequence[Transaction]) -> Tuple[float, float, dict, dict]:
     income = 0.0
     expense = 0.0

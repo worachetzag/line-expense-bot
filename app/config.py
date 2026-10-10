@@ -19,6 +19,11 @@ class Settings(BaseSettings):
 
     app_timezone: str = "Asia/Bangkok"
 
+    # Optional LLM fallback for parsing free-form messages (OpenAI-compatible).
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+
     @property
     def database_url(self) -> str:
         """SQLAlchemy URL. Uses Turso in production, local SQLite otherwise."""

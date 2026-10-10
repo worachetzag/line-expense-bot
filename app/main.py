@@ -24,13 +24,16 @@ from app.db import (
     record_group_member,
 )
 from app.line_client import QuickItems, get_profile_name, reply_text
-from app.parser import detect_command, extract_amount, parse_transaction
+from app.llm import is_enabled as llm_is_enabled
+from app.llm import parse_with_llm
+from app.parser import count_amounts, detect_command, extract_amount, parse_transaction
 from app.summary import (
     format_money,
     group_summary_today,
     help_text,
     personal_balance,
     render_confirmation,
+    render_multi_confirmation,
     summary_month,
     summary_today,
     summary_week,
@@ -123,6 +126,29 @@ def _handle_set_opening(
     )
 
 
+def _save_items(
+    session: Session, user_id: str, items, group_id: str
+) -> Tuple[str, QuickItems]:
+    saved: list[Transaction] = []
+    for item in items:
+        tx = Transaction(
+            user_id=user_id,
+            type=item.type,
+            amount=item.amount,
+            category=item.category,
+            note=item.note,
+            raw_message=item.raw,
+        )
+        session.add(tx)
+        saved.append(tx)
+    session.commit()
+    for tx in saved:
+        session.refresh(tx)
+    if len(saved) == 1:
+        return render_confirmation(saved[0]), _after_save_quick(group_id)
+    return render_multi_confirmation(saved), _after_save_quick(group_id)
+
+
 def process_message(
     user_id: str, text: str, group_id: str = ""
 ) -> Tuple[str, Optional[QuickItems]]:
@@ -202,20 +228,23 @@ def process_message(
                 session.refresh(last)
                 return render_confirmation(last), _after_save_quick(group_id)
 
+        # Many numbers in one message -> likely multiple items -> try the LLM first.
+        llm_tried = False
+        if llm_is_enabled() and count_amounts(text) >= 2:
+            llm_tried = True
+            llm_items = parse_with_llm(text)
+            if llm_items:
+                return _save_items(session, user_id, llm_items, group_id)
+
         parsed = parse_transaction(text)
         if parsed is not None:
-            tx = Transaction(
-                user_id=user_id,
-                type=parsed.type,
-                amount=parsed.amount,
-                category=parsed.category,
-                note=parsed.note,
-                raw_message=parsed.raw,
-            )
-            session.add(tx)
-            session.commit()
-            session.refresh(tx)
-            return render_confirmation(tx), _after_save_quick(group_id)
+            return _save_items(session, user_id, [parsed], group_id)
+
+        # Free-form fallback: let the LLM extract one or more transactions.
+        if not llm_tried:
+            llm_items = parse_with_llm(text)
+            if llm_items:
+                return _save_items(session, user_id, llm_items, group_id)
 
     return (
         "🤔 อันนี้ยังไม่เข้าใจ\n\n" + help_text(),

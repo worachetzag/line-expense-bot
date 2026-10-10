@@ -40,6 +40,11 @@ def extract_amount(text: str) -> Optional[float]:
     return float(match.group(1).replace(",", ""))
 
 
+def count_amounts(text: str) -> int:
+    """How many standalone numbers appear in the text (0, 1, 2, ...)."""
+    return len(_AMOUNT_RE.findall(text or ""))
+
+
 def parse_transaction(text: str) -> Optional[ParsedTransaction]:
     """Parse "50 กาแฟ", "กาแฟ 50", "+25000 เงินเดือน" into a transaction.
 
