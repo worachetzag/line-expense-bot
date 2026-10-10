@@ -8,7 +8,7 @@ from typing import Iterator, Optional
 from pydantic import NaiveDatetime
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Field, Session, SQLModel, create_engine
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 from app.config import settings
 
@@ -53,6 +53,28 @@ class Transaction(SQLModel, table=True):
     created_at: NaiveDatetime = Field(default_factory=now_local, index=True)
 
 
+class Account(SQLModel, table=True):
+    """One ledger per LINE user: display name + opening (starting) balance."""
+
+    __tablename__ = "accounts"
+
+    user_id: str = Field(primary_key=True)
+    display_name: str = ""
+    opening_balance: float = 0.0
+    updated_at: NaiveDatetime = Field(default_factory=now_local)
+
+
+class GroupMember(SQLModel, table=True):
+    """Who has been seen in a group chat (for the combined summary)."""
+
+    __tablename__ = "group_members"
+
+    group_id: str = Field(primary_key=True)
+    user_id: str = Field(primary_key=True)
+    display_name: str = ""
+    joined_at: NaiveDatetime = Field(default_factory=now_local)
+
+
 class ProcessedEvent(SQLModel, table=True):
     """Records LINE webhook event ids we already handled (dedupe redelivery)."""
 
@@ -70,6 +92,43 @@ def get_session() -> Iterator[Session]:
     with Session(engine) as session:
         yield session
 
+
+# ---- accounts / members ----------------------------------------------------
+
+def get_or_create_account(session: Session, user_id: str) -> Account:
+    account = session.get(Account, user_id)
+    if account is None:
+        account = Account(user_id=user_id)
+        session.add(account)
+        session.commit()
+        session.refresh(account)
+    return account
+
+
+def record_group_member(
+    session: Session, group_id: str, user_id: str, display_name: str = ""
+) -> None:
+    if not group_id:
+        return
+    member = session.get(GroupMember, (group_id, user_id))
+    if member is None:
+        member = GroupMember(
+            group_id=group_id, user_id=user_id, display_name=display_name
+        )
+        session.add(member)
+        session.commit()
+    elif display_name and member.display_name != display_name:
+        member.display_name = display_name
+        session.add(member)
+        session.commit()
+
+
+def group_members(session: Session, group_id: str) -> list[GroupMember]:
+    stmt = select(GroupMember).where(GroupMember.group_id == group_id)
+    return list(session.exec(stmt).all())
+
+
+# ---- event dedupe ----------------------------------------------------------
 
 def claim_event(event_id: str) -> bool:
     """Atomically claim a webhook event id.

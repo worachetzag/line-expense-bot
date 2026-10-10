@@ -32,6 +32,14 @@ def _clean_note(note: str) -> str:
     return note.strip(" \t-+.:").strip()
 
 
+def extract_amount(text: str) -> Optional[float]:
+    """Return the first number found in the text (or None)."""
+    match = _AMOUNT_RE.search(text or "")
+    if not match:
+        return None
+    return float(match.group(1).replace(",", ""))
+
+
 def parse_transaction(text: str) -> Optional[ParsedTransaction]:
     """Parse "50 กาแฟ", "กาแฟ 50", "+25000 เงินเดือน" into a transaction.
 
@@ -92,6 +100,9 @@ def detect_command(text: str) -> Optional[Tuple[str, str]]:
     if t in {"หมวด", "หมวดหมู่", "categories", "category"}:
         return ("categories", "")
 
+    if t in {"สรุปคู่", "สรุปบ้าน", "สรุปรวม", "สรุปทั้งคู่", "สรุปด้วยกัน", "สรุปครอบครัว"}:
+        return ("summary_group", "")
+
     if t in {"สรุป", "สรุปวันนี้", "วันนี้", "summary"}:
         return ("summary_today", "")
 
@@ -104,9 +115,20 @@ def detect_command(text: str) -> Optional[Tuple[str, str]]:
     if t in {"ลบล่าสุด", "ลบ", "undo", "ยกเลิกล่าสุด"}:
         return ("delete_last", "")
 
+    for prefix in ("ตั้งต้น", "เงินตั้งต้น", "ยอดยกมา"):
+        if t.startswith(prefix):
+            arg = text.strip()[len(prefix):].strip(" :")
+            return ("set_opening", arg)
+
     for prefix in ("แก้หมวด", "แก้", "เปลี่ยนหมวด", "หมวด:"):
         if t.startswith(prefix):
             arg = text.strip()[len(prefix):].strip(" :")
             return ("edit_category", arg)
+
+    for prefix in ("ชื่อ", "ตั้งชื่อ"):
+        if t.startswith(prefix):
+            arg = text.strip()[len(prefix):].strip(" :")
+            if arg:
+                return ("set_name", arg)
 
     return None

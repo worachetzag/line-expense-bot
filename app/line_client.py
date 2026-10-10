@@ -43,3 +43,13 @@ def reply_text(
         MessagingApi(api_client).reply_message(
             ReplyMessageRequest(reply_token=reply_token, messages=[message])
         )
+
+
+def get_profile_name(user_id: str) -> str:
+    """Best-effort fetch of a user's LINE display name (empty string on failure)."""
+    try:
+        with ApiClient(configuration) as api_client:
+            profile = MessagingApi(api_client).get_profile(user_id)
+            return profile.display_name or ""
+    except Exception:  # noqa: BLE001 - profile is optional
+        return ""

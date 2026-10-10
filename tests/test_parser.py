@@ -72,3 +72,25 @@ def test_detect_help():
 
 def test_detect_unknown_is_none():
     assert detect_command("กาแฟ 50") is None
+
+
+def test_detect_set_opening():
+    assert detect_command("ตั้งต้น 10000") == ("set_opening", "10000")
+    assert detect_command("ตั้งต้น") == ("set_opening", "")
+
+
+def test_detect_set_name():
+    assert detect_command("ชื่อ พี่") == ("set_name", "พี่")
+
+
+def test_detect_group_summary():
+    assert detect_command("สรุปคู่") == ("summary_group", "")
+    assert detect_command("สรุปบ้าน") == ("summary_group", "")
+
+
+def test_extract_amount():
+    from app.parser import extract_amount
+
+    assert extract_amount("10000") == 10000
+    assert extract_amount("1,250 บาท") == 1250
+    assert extract_amount("abc") is None
