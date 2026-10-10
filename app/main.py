@@ -14,7 +14,7 @@ from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
 
 from app.categories import INCOME_CATEGORIES, EXPENSE_CATEGORIES, categories_for
 from app.config import settings
-from app.db import Transaction, engine, init_db
+from app.db import Transaction, claim_event, engine, init_db, prune_processed_events
 from app.line_client import QuickItems, reply_text
 from app.parser import detect_command, parse_transaction
 from app.summary import (
@@ -48,6 +48,7 @@ app = FastAPI(title="line-expense-bot")
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    prune_processed_events()
 
 
 @app.get("/")
@@ -156,11 +157,17 @@ handler = WebhookHandler(settings.line_channel_secret)
 
 @handler.add(FollowEvent)
 def on_follow(event: FollowEvent) -> None:
+    if not claim_event(getattr(event, "webhook_event_id", "") or ""):
+        logger.info("Ignoring duplicate follow event")
+        return
     reply_text(event.reply_token, WELCOME, DEFAULT_QUICK)
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def on_text_message(event: MessageEvent) -> None:
+    if not claim_event(getattr(event, "webhook_event_id", "") or ""):
+        logger.info("Ignoring duplicate message event")
+        return
     user_id = event.source.user_id
     text = event.message.text
     try:

@@ -1,11 +1,13 @@
 """Database engine, session, and models."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator, Optional
 
 from pydantic import NaiveDatetime
+from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 from app.config import settings
@@ -51,6 +53,15 @@ class Transaction(SQLModel, table=True):
     created_at: NaiveDatetime = Field(default_factory=now_local, index=True)
 
 
+class ProcessedEvent(SQLModel, table=True):
+    """Records LINE webhook event ids we already handled (dedupe redelivery)."""
+
+    __tablename__ = "processed_events"
+
+    event_id: str = Field(primary_key=True)
+    created_at: NaiveDatetime = Field(default_factory=now_local, index=True)
+
+
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
 
@@ -58,3 +69,32 @@ def init_db() -> None:
 def get_session() -> Iterator[Session]:
     with Session(engine) as session:
         yield session
+
+
+def claim_event(event_id: str) -> bool:
+    """Atomically claim a webhook event id.
+
+    Returns True the first time an id is seen (safe to process),
+    False if it was already handled (duplicate / redelivery).
+    """
+    if not event_id:
+        # No id available -> cannot dedupe, process it.
+        return True
+    with Session(engine) as session:
+        if session.get(ProcessedEvent, event_id) is not None:
+            return False
+        session.add(ProcessedEvent(event_id=event_id))
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            return False
+    return True
+
+
+def prune_processed_events(days: int = 7) -> None:
+    """Drop old event ids to keep the table small."""
+    cutoff = now_local() - timedelta(days=days)
+    with Session(engine) as session:
+        session.exec(delete(ProcessedEvent).where(ProcessedEvent.created_at < cutoff))
+        session.commit()
